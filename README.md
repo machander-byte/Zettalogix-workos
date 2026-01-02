@@ -25,6 +25,10 @@ Set the following environment variables (see `/backend/.env.example` and `/front
 
 Frontend reads `NEXT_PUBLIC_API_URL` from `.env.local` to reach the API; it defaults to `http://localhost:5000/api` if you leave it unset.
 
+Auth notes:
+- OTP is required for roles in `OTP_REQUIRED_ROLES` (defaults to `admin,employee`). If you do not have email delivery yet, set `SHOW_OTP_IN_RESPONSE=true` or set `OTP_REQUIRED_ROLES=none` to disable OTP.
+- For a fresh database, set `ALLOW_BOOTSTRAP_ADMIN=true` to allow the first registration to be an admin, then disable it.
+
 ### TURN for calls
 
 To enable TURN for WebRTC calls, set the following in `frontend/.env.local` (or host env vars). If unset, calls fall back to STUN only.

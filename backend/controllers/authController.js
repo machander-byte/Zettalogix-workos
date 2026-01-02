@@ -24,6 +24,20 @@ const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
 const OTP_RESEND_COOLDOWN_MS = Number(process.env.OTP_RESEND_COOLDOWN_SEC || 30) * 1000;
 const SHOULD_EXPOSE_OTP =
   process.env.SHOW_OTP_IN_RESPONSE === 'true' || process.env.NODE_ENV !== 'production';
+const ALLOW_BOOTSTRAP_ADMIN = process.env.ALLOW_BOOTSTRAP_ADMIN === 'true';
+
+const parseRoleList = (value) => {
+  if (value === undefined) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized || ['none', 'false', 'off', '0'].includes(normalized)) return [];
+  return normalized
+    .split(',')
+    .map((role) => role.trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const DEFAULT_OTP_ROLES = ['admin', 'employee'];
+const OTP_REQUIRED_ROLES = parseRoleList(process.env.OTP_REQUIRED_ROLES) ?? DEFAULT_OTP_ROLES;
 
 const respondWithSession = (res, user, tokens, status = 200) =>
   res.status(status).json({
@@ -60,7 +74,8 @@ const issueOtp = async (user) => {
   return undefined;
 };
 
-const requiresOtp = (user) => ['admin', 'employee'].includes(user.role);
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const requiresOtp = (user) => OTP_REQUIRED_ROLES.includes(normalizeRole(user.role));
 
 const respondWithOtpChallenge = (res, user, otp) =>
   res.json({
@@ -114,16 +129,18 @@ export const register = async (req, res) => {
   const existing = await User.findOne({ email });
   if (existing) return res.status(400).json({ message: 'Email already registered' });
 
-  const allowedRoles = ['employee'];
-  const requestedRole = allowedRoles.includes(role) ? role : 'employee';
-  const roleDoc = await Role.findOne({ name: requestedRole });
+  const requestedRole = normalizeRole(role);
+  const isBootstrap = ALLOW_BOOTSTRAP_ADMIN && (await User.estimatedDocumentCount()) === 0;
+  const allowedRoles = isBootstrap ? ['admin', 'manager', 'hr', 'employee'] : ['employee'];
+  const finalRole = allowedRoles.includes(requestedRole) ? requestedRole : 'employee';
+  const roleDoc = await Role.findOne({ name: finalRole });
 
   const hashed = await bcrypt.hash(password, 10);
   const user = await User.create({
     name,
     email,
     password: hashed,
-    role: requestedRole,
+    role: finalRole,
     roleRef: roleDoc?._id,
     permissions: roleDoc?.permissions || undefined
   });
@@ -136,7 +153,7 @@ export const register = async (req, res) => {
     entityType: 'user',
     entityId: user._id,
     description: `${user.name} created an account`,
-    metadata: { role: requestedRole },
+    metadata: { role: finalRole },
     ipAddress: req.ip
   });
   respondWithSession(res, user, tokens, 201);

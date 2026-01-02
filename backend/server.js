@@ -10,6 +10,7 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import connectDB from './config/db.js';
 import seedTempData from './utils/seedTempData.js';
+import Role from './models/Role.js';
 import authRoutes from './routes/authRoutes.js';
 import workRoutes from './routes/workRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
@@ -154,6 +155,12 @@ const start = async () => {
     serverStarting = false;
     console.error('Failed to connect to database:', error);
     process.exit(1);
+  }
+
+  try {
+    await Role.ensureCoreRoles();
+  } catch (error) {
+    console.error('Failed to ensure core roles:', error);
   }
 
   try {
