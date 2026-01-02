@@ -6,19 +6,6 @@ import { presenceService } from '@/services/presenceService';
 import { workService } from '@/services/workService';
 import { IUser } from '@/types';
 
-type LoginResult =
-  | {
-      status: 'ok';
-      user: IUser;
-    }
-  | {
-      status: 'otp';
-      email: string;
-      expiresAt?: string;
-      otp?: string;
-      delivery?: string;
-    };
-
 type State = {
   user: IUser | null;
   token: string | null;
@@ -29,9 +16,7 @@ type State = {
 
 type Actions = {
   hydrate: () => Promise<void>;
-  login: (payload: LoginPayload) => Promise<LoginResult>;
-  verifyOtp: (payload: { email: string; otp: string }) => Promise<IUser>;
-  resendOtp: (email: string) => Promise<{ expiresAt?: string; otp?: string }>;
+  login: (payload: LoginPayload) => Promise<IUser>;
   register: (payload: RegisterPayload) => Promise<IUser>;
   logout: () => Promise<void>;
 };
@@ -94,16 +79,6 @@ export const useAuthStore = create<State & Actions>((set, get) => ({
     set({ loading: true });
     try {
       const data = await authService.login(payload);
-      if ('otpRequired' in data) {
-        set({ loading: false });
-        return {
-          status: 'otp',
-          email: data.email,
-          expiresAt: data.expiresAt,
-          otp: data.otp,
-          delivery: data.delivery
-        };
-      }
       let profile = data.user;
       try {
         profile = await authService.me();
@@ -112,36 +87,7 @@ export const useAuthStore = create<State & Actions>((set, get) => ({
       }
       persistAuth({ user: profile, token: data.token, refreshToken: data.refreshToken });
       set({ user: profile, token: data.token, refreshToken: data.refreshToken, loading: false, ready: true });
-      return { status: 'ok', user: profile };
-    } catch (error) {
-      set({ loading: false });
-      throw error;
-    }
-  },
-  verifyOtp: async (payload) => {
-    set({ loading: true });
-    try {
-      const data = await authService.verifyOtp(payload);
-      let profile = data.user;
-      try {
-        profile = await authService.me();
-      } catch (error) {
-        console.warn('Failed to refresh profile after OTP', error);
-      }
-      persistAuth({ user: profile, token: data.token, refreshToken: data.refreshToken });
-      set({ user: profile, token: data.token, refreshToken: data.refreshToken, loading: false, ready: true });
       return profile;
-    } catch (error) {
-      set({ loading: false });
-      throw error;
-    }
-  },
-  resendOtp: async (email) => {
-    set({ loading: true });
-    try {
-      const data = await authService.resendOtp(email);
-      set({ loading: false });
-      return { expiresAt: data.expiresAt, otp: data.otp };
     } catch (error) {
       set({ loading: false });
       throw error;

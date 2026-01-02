@@ -4,17 +4,13 @@ import {
   register,
   profile,
   refreshSession,
-  logout,
-  verifyOtp,
-  resendOtp
+  logout
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
 router.post('/register', register);
 router.post('/login', login);
-router.post('/otp/verify', verifyOtp);
-router.post('/otp/resend', resendOtp);
 router.post('/refresh', refreshSession);
 router.post('/logout', logout);
 router.get('/me', protect, profile);

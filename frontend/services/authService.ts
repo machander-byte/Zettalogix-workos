@@ -10,31 +10,14 @@ export type RegisterPayload = {
 };
 
 export type AuthResponse = { token: string; refreshToken: string; user: IUser };
-export type OtpChallengeResponse = {
-  otpRequired: true;
-  delivery: 'email';
-  email: string;
-  expiresAt?: string;
-  otp?: string;
-};
-export type LoginResponse = AuthResponse | OtpChallengeResponse;
-export type VerifyOtpPayload = { email: string; otp: string };
 
 export const authService = {
   login: async (payload: LoginPayload) => {
-    const { data } = await apiClient.post<LoginResponse>('/auth/login', payload);
+    const { data } = await apiClient.post<AuthResponse>('/auth/login', payload);
     return data;
   },
   register: async (payload: RegisterPayload) => {
     const { data } = await apiClient.post<AuthResponse>('/auth/register', payload);
-    return data;
-  },
-  verifyOtp: async (payload: VerifyOtpPayload) => {
-    const { data } = await apiClient.post<AuthResponse>('/auth/otp/verify', payload);
-    return data;
-  },
-  resendOtp: async (email: string) => {
-    const { data } = await apiClient.post<OtpChallengeResponse>('/auth/otp/resend', { email });
     return data;
   },
   refresh: async (refreshToken: string) => {

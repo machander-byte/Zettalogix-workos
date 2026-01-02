@@ -1,5 +1,4 @@
 import bcrypt from 'bcryptjs';
-import { createHmac } from 'crypto';
 import User from '../models/User.js';
 import Role from '../models/Role.js';
 import {
@@ -17,73 +16,14 @@ const buildContext = (req) => ({
   userAgent: req.get('user-agent')
 });
 
-const OTP_TTL_MS = Number(process.env.OTP_TTL_MINUTES || 5) * 60 * 1000;
-const OTP_LENGTH = Number(process.env.OTP_LENGTH || 6);
-const OTP_SECRET = process.env.OTP_SECRET || process.env.JWT_SECRET || 'workhub-otp';
-const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
-const OTP_RESEND_COOLDOWN_MS = Number(process.env.OTP_RESEND_COOLDOWN_SEC || 30) * 1000;
-const SHOULD_EXPOSE_OTP =
-  process.env.SHOW_OTP_IN_RESPONSE === 'true' || process.env.NODE_ENV !== 'production';
 const ALLOW_BOOTSTRAP_ADMIN = process.env.ALLOW_BOOTSTRAP_ADMIN === 'true';
-
-const parseRoleList = (value) => {
-  if (value === undefined) return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized || ['none', 'false', 'off', '0'].includes(normalized)) return [];
-  return normalized
-    .split(',')
-    .map((role) => role.trim().toLowerCase())
-    .filter(Boolean);
-};
-
-const DEFAULT_OTP_ROLES = ['admin', 'employee'];
-const OTP_REQUIRED_ROLES = parseRoleList(process.env.OTP_REQUIRED_ROLES) ?? DEFAULT_OTP_ROLES;
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 
 const respondWithSession = (res, user, tokens, status = 200) =>
   res.status(status).json({
     token: tokens.token,
     refreshToken: tokens.refreshToken,
     user: user.toSafeObject()
-  });
-
-const hashOtp = (otp) =>
-  createHmac('sha256', OTP_SECRET).update(otp).digest('hex');
-
-const generateOtp = () => {
-  const length = Number.isFinite(OTP_LENGTH) && OTP_LENGTH > 3 ? OTP_LENGTH : 6;
-  const min = 10 ** (length - 1);
-  const max = 10 ** length;
-  return String(Math.floor(Math.random() * (max - min) + min));
-};
-
-const clearOtp = (user) => {
-  user.otpCodeHash = undefined;
-  user.otpExpiresAt = undefined;
-  user.otpAttempts = 0;
-};
-
-const issueOtp = async (user) => {
-  const otp = generateOtp();
-  user.otpCodeHash = hashOtp(otp);
-  user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
-  user.otpLastSentAt = new Date();
-  user.otpAttempts = 0;
-  await user.save();
-  if (SHOULD_EXPOSE_OTP) return otp;
-  console.log(`[OTP] ${user.email}: ${otp} (expires ${user.otpExpiresAt.toISOString()})`);
-  return undefined;
-};
-
-const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
-const requiresOtp = (user) => OTP_REQUIRED_ROLES.includes(normalizeRole(user.role));
-
-const respondWithOtpChallenge = (res, user, otp) =>
-  res.json({
-    otpRequired: true,
-    delivery: 'email',
-    email: user.email,
-    expiresAt: user.otpExpiresAt?.toISOString(),
-    ...(otp ? { otp } : {})
   });
 
 const attachRoleMetadata = async (user) => {
@@ -101,7 +41,6 @@ const completeLogin = async (req, res, user, auditMetadata = {}) => {
   user.lastLogin = new Date();
   user.status = 'active';
   user.lastActiveAt = new Date();
-  clearOtp(user);
   await attachRoleMetadata(user);
   await user.save();
   await startSession(user._id, user._id);
@@ -169,69 +108,7 @@ export const login = async (req, res) => {
   if (!match) return res.status(400).json({ message: 'Invalid credentials' });
 
   await attachRoleMetadata(user);
-  if (requiresOtp(user)) {
-    if (
-      user.otpLastSentAt &&
-      Date.now() - new Date(user.otpLastSentAt).getTime() < OTP_RESEND_COOLDOWN_MS
-    ) {
-      return res.status(429).json({ message: 'OTP recently sent. Please wait a moment.' });
-    }
-    const otp = await issueOtp(user);
-    return respondWithOtpChallenge(res, user, otp);
-  }
-
   return completeLogin(req, res, user, { email });
-};
-
-export const verifyOtp = async (req, res) => {
-  const { email, otp } = req.body;
-  if (!email || !otp) return res.status(400).json({ message: 'Email and OTP required' });
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-  if (user.isDeactivated) return res.status(403).json({ message: 'Account disabled' });
-
-  if (!user.otpCodeHash || !user.otpExpiresAt) {
-    return res.status(400).json({ message: 'OTP expired or not requested' });
-  }
-  if (user.otpExpiresAt.getTime() < Date.now()) {
-    clearOtp(user);
-    await user.save();
-    return res.status(400).json({ message: 'OTP expired' });
-  }
-  if (user.otpAttempts >= OTP_MAX_ATTEMPTS) {
-    clearOtp(user);
-    await user.save();
-    return res.status(429).json({ message: 'OTP attempts exceeded. Login again.' });
-  }
-
-  const match = hashOtp(String(otp)) === user.otpCodeHash;
-  if (!match) {
-    user.otpAttempts += 1;
-    await user.save();
-    return res.status(400).json({ message: 'Invalid OTP' });
-  }
-
-  return completeLogin(req, res, user, { email, method: 'otp' });
-};
-
-export const resendOtp = async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email required' });
-  const user = await User.findOne({ email });
-  if (!user || user.isDeactivated) {
-    return res.json({ otpRequired: true, delivery: 'email' });
-  }
-  if (!requiresOtp(user)) {
-    return res.status(400).json({ message: 'OTP not required for this account' });
-  }
-  if (
-    user.otpLastSentAt &&
-    Date.now() - new Date(user.otpLastSentAt).getTime() < OTP_RESEND_COOLDOWN_MS
-  ) {
-    return res.status(429).json({ message: 'OTP recently sent. Please wait a moment.' });
-  }
-  const otp = await issueOtp(user);
-  return respondWithOtpChallenge(res, user, otp);
 };
 
 export const refreshSession = async (req, res) => {

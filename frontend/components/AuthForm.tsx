@@ -10,7 +10,7 @@ type Props = { mode: 'login' | 'register' };
 
 export default function AuthForm({ mode }: Props) {
   const router = useRouter();
-  const { login, register, verifyOtp, resendOtp, loading } = useAuthStore();
+  const { login, register, loading } = useAuthStore();
   const demoAccounts = {
     admin: { email: 'admin@workos.dev', password: 'Admin@123' },
     employee: { email: 'eli@workos.dev', password: 'Employee@123' }
@@ -27,10 +27,6 @@ export default function AuthForm({ mode }: Props) {
     role: 'employee'
   });
   const [error, setError] = useState('');
-  const [otpStep, setOtpStep] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpHint, setOtpHint] = useState('');
-  const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(null);
 
   const redirectAfterAuth = (user: IUser) =>
     user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
@@ -48,20 +44,8 @@ export default function AuthForm({ mode }: Props) {
     setError('');
     try {
       if (mode === 'login') {
-        if (otpStep) {
-          const user = await verifyOtp({ email: form.email, otp: otpCode });
-          router.replace(redirectAfterAuth(user));
-          return;
-        }
-        const result = await login({ email: form.email, password: form.password });
-        if (result.status === 'otp') {
-          setOtpStep(true);
-          setOtpCode('');
-          setOtpHint(result.otp || '');
-          setOtpExpiresAt(result.expiresAt || null);
-          return;
-        }
-        router.replace(redirectAfterAuth(result.user));
+        const user = await login({ email: form.email, password: form.password });
+        router.replace(redirectAfterAuth(user));
         return;
       }
       const user = await register(form);
@@ -69,24 +53,6 @@ export default function AuthForm({ mode }: Props) {
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Authentication failed');
     }
-  };
-
-  const handleResendOtp = async () => {
-    setError('');
-    try {
-      const data = await resendOtp(form.email);
-      setOtpHint(data.otp || '');
-      setOtpExpiresAt(data.expiresAt || null);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to resend OTP');
-    }
-  };
-
-  const handleOtpReset = () => {
-    setOtpStep(false);
-    setOtpCode('');
-    setOtpHint('');
-    setOtpExpiresAt(null);
   };
 
   return (
@@ -156,7 +122,7 @@ export default function AuthForm({ mode }: Props) {
               </div>
             </div>
 
-            {mode === 'login' && !otpStep && (
+            {mode === 'login' && (
               <div className="mb-4 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
@@ -182,24 +148,6 @@ export default function AuthForm({ mode }: Props) {
             )}
 
             <div className="space-y-3">
-              {mode === 'login' && otpStep && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Verification required
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Enter the one-time code sent to {form.email}.
-                  </p>
-                  {otpHint && (
-                    <p className="mt-2 text-xs text-slate-500">Dev code: {otpHint}</p>
-                  )}
-                  {otpExpiresAt && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Expires at {new Date(otpExpiresAt).toLocaleTimeString()}
-                    </p>
-                  )}
-                </div>
-              )}
               {mode === 'register' && (
                 <div className="space-y-1">
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -225,41 +173,21 @@ export default function AuthForm({ mode }: Props) {
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 shadow-inner outline-none transition focus:-translate-y-0.5 focus:border-brand-500 focus:bg-white focus:shadow-lg"
                   value={form.email}
                   onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-                  disabled={mode === 'login' && otpStep}
                 />
               </div>
-              {!otpStep && (
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Password
-                  </label>
-                  <input
-                    required
-                    type="password"
-                    placeholder="********"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 shadow-inner outline-none transition focus:-translate-y-0.5 focus:border-brand-500 focus:bg-white focus:shadow-lg"
-                    value={form.password}
-                    onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-                  />
-                </div>
-              )}
-              {mode === 'login' && otpStep && (
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    One-time code
-                  </label>
-                  <input
-                    required
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={8}
-                    placeholder="123456"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold tracking-[0.3em] text-slate-900 shadow-inner outline-none transition focus:-translate-y-0.5 focus:border-brand-500 focus:bg-white focus:shadow-lg"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\\D/g, ''))}
-                  />
-                </div>
-              )}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Password
+                </label>
+                <input
+                  required
+                  type="password"
+                  placeholder="********"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 shadow-inner outline-none transition focus:-translate-y-0.5 focus:border-brand-500 focus:bg-white focus:shadow-lg"
+                  value={form.password}
+                  onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+                />
+              </div>
               {mode === 'register' && (
                 <div className="space-y-1">
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -280,24 +208,6 @@ export default function AuthForm({ mode }: Props) {
             </div>
 
             <div className="mt-6 space-y-4">
-              {mode === 'login' && otpStep && (
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <button
-                    type="button"
-                    className="font-semibold text-brand-600 underline decoration-2 underline-offset-4 transition hover:text-brand-500"
-                    onClick={handleResendOtp}
-                  >
-                    Resend code
-                  </button>
-                  <button
-                    type="button"
-                    className="font-semibold text-slate-600 underline decoration-2 underline-offset-4 transition hover:text-slate-800"
-                    onClick={handleOtpReset}
-                  >
-                    Back to password
-                  </button>
-                </div>
-              )}
               <button
                 disabled={loading}
                 className={clsx(
@@ -310,9 +220,7 @@ export default function AuthForm({ mode }: Props) {
                   {loading
                     ? 'Please wait'
                     : mode === 'login'
-                      ? otpStep
-                        ? 'Verify OTP'
-                        : 'Sign in to WorkHub'
+                      ? 'Sign in to WorkHub'
                       : 'Create my account'}
                 </span>
               </button>
