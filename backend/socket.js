@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import CallLog from './models/CallLog.js';
+import { getAllowedOrigins, isOriginAllowed } from './config/origins.js';
 import {
   startSession,
   pauseSession,
@@ -352,9 +353,13 @@ const cleanupSocket = (socket) => {
 };
 
 export const initSocket = (server) => {
+  const allowedOrigins = getAllowedOrigins();
   const io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL?.split(',') || ['http://localhost:3000'],
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
+        return callback(new Error(`CORS policy blocks requests from ${origin}`));
+      },
       credentials: true
     }
   });

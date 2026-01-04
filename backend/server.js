@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import connectDB from './config/db.js';
+import { getAllowedOrigins, isOriginAllowed } from './config/origins.js';
 import seedTempData from './utils/seedTempData.js';
 import Role from './models/Role.js';
 import authRoutes from './routes/authRoutes.js';
@@ -47,26 +48,12 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 initSocket(server);
 
-const clientUrls = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL
-      .split(',')
-      .map((url) => url.trim().replace(/\/$/, '').toLowerCase())
-      .filter(Boolean)
-  : [];
-const defaultOrigins = ['http://localhost:3000', 'http://localhost:3001'];
-const allowedOrigins = new Set(
-  [...clientUrls, ...defaultOrigins].map((url) => url.toLowerCase())
-);
-
-const isLocalOrigin = (origin) =>
-  origin?.startsWith('http://localhost') || origin?.startsWith('http://127.0.0.1');
+const allowedOrigins = getAllowedOrigins();
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
-      if (allowedOrigins.has(normalizedOrigin) || isLocalOrigin(normalizedOrigin))
+      if (isOriginAllowed(origin, allowedOrigins))
         return callback(null, true);
       callback(new Error(`CORS policy blocks requests from ${origin}`));
     },
