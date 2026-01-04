@@ -96,6 +96,14 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/collab', collabRoutes);
 
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'workhub-backend' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
